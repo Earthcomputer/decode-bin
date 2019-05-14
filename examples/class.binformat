@@ -1,0 +1,125 @@
+byte_order(std::big_endian);
+
+array_value _index struct cp_info {
+  enum u1 cp_type {
+    CONSTANT_Class = 7;
+    CONSTANT_Fieldref = 9;
+    CONSTANT_Methodref = 10;
+    CONSTANT_InterfaceMethodref = 11;
+    CONSTANT_String = 8;
+    CONSTANT_Integer = 3;
+    CONSTANT_Float = 4;
+    CONSTANT_Long = 5;
+    CONSTANT_Double = 6;
+    CONSTANT_NameAndType = 12;
+    CONSTANT_Utf8 = 1;
+    CONSTANT_MethodHandle = 15;
+    CONSTANT_MethodType = 16;
+    CONSTANT_InvokeDynamic = 18;
+  };
+  cp_type tag;
+  switch (tag) {
+    case cp_type::CONSTANT_Class:
+      cp_ref name;
+      break;
+    case cp_type::CONSTANT_Fieldref:
+      cp_ref class;
+      cp_ref name_and_type;
+      break;
+    case cp_type::CONSTANT_Methodref:
+      cp_ref class;
+      cp_ref name_and_type;
+      break;
+    case cp_type::CONSTANT_InterfaceMethodref:
+      cp_ref class;
+      cp_ref name_and_type;
+      break;
+    case cp_type::CONSTANT_String:
+      cp_ref string;
+      break;
+    case cp_type::CONSTANT_Integer:
+      s4 value;
+      break;
+    case cp_type::CONSTANT_Float:
+      f4 value;
+      break;
+    case cp_type::CONSTANT_Long:
+      s8 value;
+      _index++;
+      break;
+    case cp_type::CONSTANT_Double:
+      f8 value;
+      _index++;
+      break;
+    case cp_type::CONSTANT_NameAndType:
+      cp_ref name;
+      cp_ref descriptor;
+      break;
+    case cp_type::CONSTANT_Utf8:
+      u2 length;
+      u1 hide bytes[length];
+      var i = 0;
+      while (i < length) {
+        var val = bytes[i++];
+        if (val >= 1 && val <= 0x7f) {
+          print(char(val), "");
+        } else if ((val & 0xe0) == 0xe0) {
+          print(char(((val & 0x1f) << 6) + (bytes[i++] & 0x3f)), "");
+        } else {
+          print(char(((val & 0xf) << 12) + ((bytes[i++] & 0x3f) << 6) + (bytes[i++] & 0x3f)), "");
+        }
+      }
+      break;
+    case cp_type::CONSTANT_MethodHandle:
+      enum u1 {
+        REF_getField = 1; REF_getStatic = 2; REF_putField = 3; REF_putStatic = 4;
+        REF_invokeVirtual = 5; REF_invokeStatic = 6; REF_invokeSpecial = 7; REF_newInvokeSpecial = 8;
+        REF_invokeInterface = 9;
+      } reference_kind;
+      cp_ref reference_index;
+      break;
+    case cp_type::CONSTANT_MethodType:
+      cp_ref descriptor;
+      break;
+    case cp_type::CONSTANT_InvokeDynamic:
+      u2 bootstrap_method_attr_index;
+      cp_ref name_and_type;
+      break;
+    default:
+      assert(false, "Invalid cp tag");
+  }
+};
+
+
+u4 magic;
+assert(magic == 0xcafebabe, "Invalid magic");
+u2 minor_version;
+u2 major_version;
+
+// Constant pool
+u2 constant_pool_count;
+cp_info constant_pool[constant_pool_count-1];
+flags u4 {
+  acc_enum = 0x4000; acc_annotation = 0x2000; acc_synthetic = 0x1000;
+  acc_abstract = 0x400; acc_interface = 0x200;
+  acc_super = 0x20; acc_final = 0x10;
+  acc_public = 0x1;
+} access_flags;
+
+struct cp_ref {
+  u2 index;
+  print(constant_pool[index-1]);
+};
+struct cp_ref_nullable {
+  u2 index;
+  if (index == 0)
+    print("null");
+  else
+    print(constant_pool[index-1]);
+};
+
+cp_ref this_class;
+cp_ref_nullable super_class;
+
+u2 interfaces_count;
+cp_ref interfaces[interfaces_count];
