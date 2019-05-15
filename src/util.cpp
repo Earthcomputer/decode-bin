@@ -39,13 +39,11 @@ string create_underline(Token &t) {
     string ret;
     for (int i = 0; i < t.col; i++)
         ret += " ";
-    if (!t.value.empty())
+    if (!t.value.empty()) {
         ret += "^";
-    if (t.value.size() >= 2) {
-        for (int i = 0; i < t.value.size() - 2; i++) {
+        for (int i = 0; i < t.value.size() - 1; i++) {
             ret += "~";
         }
-        ret += "^";
     }
     return ret;
 }

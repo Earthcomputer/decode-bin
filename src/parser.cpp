@@ -6,15 +6,15 @@
 
 using namespace std;
 
-typedef function<void(Token)> ErrorHandler;
+typedef function<void(Token)> ParserErrorHandler;
 
 class Parser {
     vector<Token> &m_tokens;
     int m_index;
-    ErrorHandler m_error_handler;
+    ParserErrorHandler m_error_handler;
 
 public:
-    Parser(vector<Token> &tokens, ErrorHandler &error_handler) : m_tokens(tokens), m_index(0), m_error_handler(error_handler) {
+    Parser(vector<Token> &tokens, ParserErrorHandler &error_handler) : m_tokens(tokens), m_index(0), m_error_handler(error_handler) {
     }
 
     bool eof() {
@@ -74,17 +74,18 @@ public:
     }
 
     upStatement block_statement() {
-        auto ret = make_unique<BlockStatement>();
+        auto ret = make_unique<BlockStatement>(peek());
         advance(); // {
         while (peek().value != "}") {
             ret->m_statements.push_back(statement());
         }
+        ret->m_end_token = peek();
         advance(); // }
         return ret;
     }
 
     upStatement if_statement() {
-        auto ret = make_unique<IfStatement>();
+        auto ret = make_unique<IfStatement>(peek());
         advance(); // if
         if (peek().value != "(") throw peek();
         advance(); // (
@@ -92,16 +93,18 @@ public:
         if (peek().value != ")") throw peek();
         advance(); // )
         ret->m_if_true = statement();
+        ret->m_end_token = ret->m_if_true->m_end_token;
         ret->m_if_false = nullptr;
         if (peek().value == "else") {
             advance(); // else
             ret->m_if_false = statement();
+            ret->m_end_token = ret->m_if_false->m_end_token;
         }
         return ret;
     }
 
     upStatement while_statement() {
-        auto ret = make_unique<WhileStatement>();
+        auto ret = make_unique<WhileStatement>(peek());
         advance(); // while
         if (peek().value != "(") throw peek();
         advance(); // (
@@ -109,11 +112,12 @@ public:
         if (peek().value != ")") throw peek();
         advance(); // )
         ret->m_body = statement();
+        ret->m_end_token = ret->m_body->m_end_token;
         return ret;
     }
 
     upStatement do_while_statement() {
-        auto ret = make_unique<DoWhileStatement>();
+        auto ret = make_unique<DoWhileStatement>(peek());
         advance(); // do
         ret->m_body = statement();
         if (peek().value != "while") throw peek();
@@ -124,12 +128,13 @@ public:
         if (peek().value != ")") throw peek();
         advance(); // )
         if (peek().value != ";") throw peek();
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement switch_statement() {
-        auto ret = make_unique<SwitchStatement>();
+        auto ret = make_unique<SwitchStatement>(peek());
         advance(); // switch
         if (peek().value != "(") throw peek();
         advance(); // (
@@ -160,6 +165,7 @@ public:
                 ret->m_statements.push_back(statement());
             }
         }
+        ret->m_end_token = peek();
         advance(); // }
 
         if (!had_default_case)
@@ -169,29 +175,32 @@ public:
     }
 
     upStatement break_statement() {
-        auto ret = make_unique<BreakStatement>();
+        auto ret = make_unique<BreakStatement>(peek());
         advance(); // break
         if (peek().value != ";") throw peek();
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement continue_statement() {
-        auto ret = make_unique<ContinueStatement>();
+        auto ret = make_unique<ContinueStatement>(peek());
         advance(); // continue
         if (peek().value != ";") throw peek();
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement empty_statement() {
-        auto ret = make_unique<EmptyStatement>();
+        auto ret = make_unique<EmptyStatement>(peek());
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement var_decl_statement() {
-        auto ret = make_unique<VarDeclStatement>();
+        auto ret = make_unique<VarDeclStatement>(peek());
         advance(); // var
         while (true) {
             upVarDecl decl = var_decl();
@@ -206,12 +215,13 @@ public:
             if (peek().value != ",") throw peek();
             advance(); // ,
         }
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement assignment_statement() {
-        auto ret = make_unique<AssignmentStatement>();
+        auto ret = make_unique<AssignmentStatement>(peek());
         ret->m_name = peek().value;
         advance(); // name
         ret->m_operator = get_assignment_operator(peek().value);
@@ -219,11 +229,13 @@ public:
         advance(); // operator
         ret->m_value = expression();
         if (peek().value != ";") throw peek();
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement var_incr_statement() {
+        Token begin_token = peek();
         string op, var;
         if (peek().value == "++" || peek().value == "--") {
             op = peek().value;
@@ -239,17 +251,22 @@ public:
             advance();
         }
         if (peek().value != ";") throw peek();
+        Token end_token = peek();
         advance(); // ;
         // turn "i++" into "i = i + 1"
-        auto ret = make_unique<AssignmentStatement>();
+        auto ret = make_unique<AssignmentStatement>(begin_token);
+        ret->m_end_token = end_token;
         ret->m_name = var;
         ret->m_operator = get_assignment_operator("=");
         ret->m_is_assign_only = true;
-        auto val = make_unique<BinaryOperatorExpression>();
-        auto left = make_unique<VarReferenceExpression>();
+        auto val = make_unique<BinaryOperatorExpression>(begin_token);
+        val->m_end_token = end_token;
+        auto left = make_unique<VarReferenceExpression>(begin_token);
+        left->m_end_token = end_token;
         left->m_name = var;
         val->m_left = move(left);
-        auto right = make_unique<LiteralExpression>();
+        auto right = make_unique<LiteralExpression>(begin_token);
+        right->m_end_token = end_token;
         right->m_value = make_shared<IntegerRuntimeValue>(1);
         val->m_right = move(right);
         if (op == "++") val->m_operator = [](RuntimeValue &left, Expression &right, InterpreterContext &context) { return left + *context.evaluate_expression(right); };
@@ -259,7 +276,7 @@ public:
     }
 
     upStatement builtin_function_statement() {
-        auto ret = make_unique<BuiltinFunctionStatement>();
+        auto ret = make_unique<BuiltinFunctionStatement>(peek());
         ret->m_name = peek().value;
         if (!is_valid_identifier(ret->m_name)) throw peek();
         advance(); // name
@@ -275,12 +292,13 @@ public:
         }
         advance(); // )
         if (peek().value != ";") throw peek();
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
 
     upStatement struct_ref_statement() {
-        auto ret = make_unique<StructRefStatement>();
+        auto ret = make_unique<StructRefStatement>(peek());
         ret->m_type = struct_ref();
         while (parse_struct_ref_modifier(ret->m_modifiers))
             ;
@@ -291,6 +309,7 @@ public:
             if (peek().value != ",") throw peek();
             advance(); // ,
         }
+        ret->m_end_token = peek();
         advance(); // ;
         return ret;
     }
@@ -318,9 +337,10 @@ public:
     upExpression expr = expression##next_level_(); \
     if (peek().value == #operator_) { \
         advance(); \
-        auto ret = make_unique<BinaryOperatorExpression>(); \
+        auto ret = make_unique<BinaryOperatorExpression>(expr->m_begin_token); \
         ret->m_left = move(expr); \
         ret->m_right = expression##level_(); \
+        ret->m_end_token = ret->m_right->m_end_token; \
         ret->m_operator = [](RuntimeValue &left, Expression &right, InterpreterContext &context){return left operator_ *context.evaluate_expression(right);}; \
         return ret; \
     } \
@@ -331,9 +351,10 @@ public:
     if (peek().value == #operator1_ || peek().value == #operator2_) { \
         string op = peek().value; \
         advance(); \
-        auto ret = make_unique<BinaryOperatorExpression>(); \
+        auto ret = make_unique<BinaryOperatorExpression>(expr->m_begin_token); \
         ret->m_left = move(expr); \
         ret->m_right = expression##level_(); \
+        ret->m_end_token = ret->m_right->m_end_token; \
         if (op == #operator1_) \
             ret->m_operator = [](RuntimeValue &left, Expression &right, InterpreterContext &context){return left operator1_ *context.evaluate_expression(right);}; \
         else \
@@ -347,9 +368,10 @@ public:
     if (peek().value == #operator1_ || peek().value == #operator2_ || peek().value == #operator3_) { \
         string op = peek().value; \
         advance(); \
-        auto ret = make_unique<BinaryOperatorExpression>(); \
+        auto ret = make_unique<BinaryOperatorExpression>(expr->m_begin_token); \
         ret->m_left = move(expr); \
         ret->m_right = expression##level_(); \
+        ret->m_end_token = ret->m_right->m_end_token; \
         if (op == #operator1_) \
             ret->m_operator = [](RuntimeValue &left, Expression &right, InterpreterContext &context){return left operator1_ *context.evaluate_expression(right);}; \
         else if (op == #operator2_) \
@@ -365,9 +387,10 @@ public:
     if (peek().value == #operator1_ || peek().value == #operator2_ || peek().value == #operator3_ || peek().value == #operator4_) { \
         string op = peek().value; \
         advance(); \
-        auto ret = make_unique<BinaryOperatorExpression>(); \
+        auto ret = make_unique<BinaryOperatorExpression>(expr->m_begin_token); \
         ret->m_left = move(expr); \
         ret->m_right = expression##level_(); \
+        ret->m_end_token = ret->m_right->m_end_token; \
         if (op == #operator1_) \
             ret->m_operator = [](RuntimeValue &left, Expression &right, InterpreterContext &context){return left operator1_ *context.evaluate_expression(right);}; \
         else if (op == #operator2_) \
@@ -394,21 +417,23 @@ public:
     upExpression expression11() {
         if (peek().value == "+" || peek().value == "-" || peek().value == "!" || peek().value == "~") {
             string op = peek().value;
-            advance();
-            auto ret = make_unique<UnaryOperatorExpression>();
+            auto ret = make_unique<UnaryOperatorExpression>(peek());
+            advance(); // op
             if (op == "+") ret->m_operator = [](RuntimeValue &val){return +val;};
             else if (op == "-") ret->m_operator = [](RuntimeValue &val){return -val;};
             else if (op == "!") ret->m_operator = [](RuntimeValue &val){return !val;};
             else ret->m_operator = [](RuntimeValue &val){return ~val;};
             ret->m_expr = expression11();
+            ret->m_end_token = ret->m_expr->m_end_token;
             return ret;
         }
         if (peek().value == "++" || peek().value == "--") {
             string op = peek().value;
+            auto ret = make_unique<PreIncrementExpression>(peek());
             advance(); // op
-            auto ret = make_unique<PreIncrementExpression>();
             ret->m_var = peek().value;
             if (!is_valid_identifier(ret->m_var)) throw peek();
+            ret->m_end_token = peek();
             advance(); // var
             ret->m_delta = op == "++" ? 1 : -1;
             return ret;
@@ -421,10 +446,11 @@ public:
         Token next_token = peek();
         backtrack();
         if (next_token.value == "++" || next_token.value == "--") {
-            auto ret = make_unique<PostIncrementExpression>();
+            auto ret = make_unique<PostIncrementExpression>(peek());
             ret->m_var = peek().value;
             if (!is_valid_identifier(ret->m_var)) throw peek();
             advance(); // var
+            ret->m_end_token = peek();
             advance(); // op
             ret->m_delta = next_token.value == "++" ? 1 : -1;
             return ret;
@@ -432,7 +458,7 @@ public:
 
         string name = peek().value;
         if (is_valid_identifier(name) && next_token.value == "(") {
-            auto ret = make_unique<BuiltinFunctionExpression>();
+            auto ret = make_unique<BuiltinFunctionExpression>(peek());
             ret->m_name = name;
             advance(); // name
             advance(); // (
@@ -445,6 +471,7 @@ public:
                     advance(); // ,
                 }
             }
+            ret->m_end_token = peek();
             advance(); // )
             return ret;
         }
@@ -454,8 +481,9 @@ public:
             advance(); // .
             string field = peek().value;
             if (!is_valid_identifier(field)) throw peek();
+            auto ret = make_unique<FieldAccessExpression>(expr->m_begin_token);
+            ret->m_end_token = peek();
             advance(); // field
-            auto ret = make_unique<FieldAccessExpression>();
             ret->m_struct = move(expr);
             ret->m_field = field;
             return ret;
@@ -463,11 +491,12 @@ public:
 
         if (peek().value == "[") {
             advance(); // [
-            auto ret = make_unique<BinaryOperatorExpression>();
+            auto ret = make_unique<BinaryOperatorExpression>(expr->m_begin_token);
             ret->m_left = move(expr);
             ret->m_right = expression();
             ret->m_operator = [](RuntimeValue &left, Expression &right, InterpreterContext &context){ return left[*context.evaluate_expression(right)]; };
             if (peek().value != "]") throw peek();
+            ret->m_end_token = peek();
             advance(); // ]
             return ret;
         }
@@ -495,13 +524,15 @@ public:
         Token first_token = peek();
 
         if (first_token.value == "true") {
+            auto ret = make_unique<LiteralExpression>(peek());
+            ret->m_end_token = peek();
             advance(); // true
-            auto ret = make_unique<LiteralExpression>();
             ret->m_value = make_shared<BooleanRuntimeValue>(true);
             return ret;
         } else if (first_token.value == "false") {
+            auto ret = make_unique<LiteralExpression>(peek());
+            ret->m_end_token = peek();
             advance(); // false
-            auto ret = make_unique<LiteralExpression>();
             ret->m_value = make_shared<BooleanRuntimeValue>(false);
             return ret;
         } else if (!first_token.value.empty() && (is_digit(first_token.value[0]) || (first_token.value.length() > 1 && first_token.value[0] == '.' && is_digit(first_token.value[1])))) {
@@ -640,20 +671,23 @@ public:
             }
         }
 
+        auto ret = make_unique<LiteralExpression>(peek());
+        ret->m_end_token = peek();
         advance(); // literal
-        auto ret = make_unique<LiteralExpression>();
         ret->m_value = val;
         return ret;
     }
 
     upExpression var_reference_expression() {
-        auto ret = make_unique<VarReferenceExpression>();
+        auto ret = make_unique<VarReferenceExpression>(peek());
+        ret->m_end_token = peek();
         ret->m_name = peek().value;
         advance(); // name
         if (peek().value == "::") {
             advance(); // ::
             string val = peek().value;
             if (!is_valid_identifier(val)) throw peek();
+            ret->m_end_token = peek();
             advance(); // val
             ret->m_name += "::" + val;
         }
@@ -752,7 +786,7 @@ public:
     }
 };
 
-bool parse(vector<Token> &tokens, vector<upStatement> &statements, ErrorHandler error_handler) {
+bool parse(vector<Token> &tokens, vector<upStatement> &statements, ParserErrorHandler error_handler) {
     Parser parser(tokens, error_handler);
     while (!parser.eof()) {
         try {

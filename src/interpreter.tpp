@@ -19,7 +19,7 @@ spRuntimeValue BasicRuntimeValue<T, TYPE>::operator op_(RuntimeValue &right) { \
         OP_WITH(double, op_) \
         OP_WITH(bool, op_) \
         default: \
-            throw "Undefined operator " #op_; \
+            throw "Undefined operator " #op_ " for operands (" + to_string() + ", " + right.to_string() + ")"; \
     } \
 }
 BASIC_OP(+)
@@ -43,7 +43,7 @@ struct operator_##op_name_ {}; \
 template<typename T> \
 struct operator_##op_name_<T, false> { \
     inline spRuntimeValue operator()(T value, RuntimeValue &right) { \
-        throw "Undefined operator " #op_; \
+        throw "Undefined operator " #op_ " for operands (" + to_string() + ", " + right.to_string() + ")"; \
     } \
 }; \
 template<typename T> \
@@ -54,7 +54,7 @@ struct operator_##op_name_<T, true> { \
             OP_WITH(int64_t, op_) \
             OP_WITH(bool, op_) \
             default: \
-                throw "Undefined operator " #op_; \
+                throw "Undefined operator " #op_ " for operands " + to_string() + ", " + right.to_string() + ")"; \
         } \
     } \
 }; \
@@ -92,7 +92,7 @@ struct operator_bitnot {};
 template<typename T>
 struct operator_bitnot<T, false> {
     inline spRuntimeValue operator()(T value) {
-        throw "Undefined operator ~";
+        throw "Undefined operator ~ for operand " + to_string();
     }
 };
 template<typename T>
@@ -105,4 +105,18 @@ struct operator_bitnot<T, true> {
 template<typename T, RuntimeType TYPE>
 spRuntimeValue BasicRuntimeValue<T, TYPE>::operator~() {
     return operator_bitnot<T>()(m_value);
+}
+
+template<typename T>
+struct basic_to_string {
+    inline std::string operator()(T value) { return std::to_string(value); }
+};
+template<>
+struct basic_to_string<bool> {
+    inline std::string operator()(bool value) { return value ? "true" : "false"; }
+};
+
+template<typename T, RuntimeType TYPE>
+std::string BasicRuntimeValue<T, TYPE>::to_string() {
+    return basic_to_string<T>()(m_value);
 }

@@ -100,7 +100,7 @@ void AssignmentStatement::execute(InterpreterContext &context) {
     spRuntimeValue &var_handle = context.resolve_variable(m_name);
 
     if (var_handle == nullptr && !m_is_assign_only)
-        throw "Reference to undefined variable";
+        throw "Reference to undefined variable " + m_name;
 
     spRuntimeValue value = context.evaluate_expression(*m_value);
 
@@ -160,10 +160,10 @@ void StructRefStatement::execute(InterpreterContext &context) {
             vector<int> dimensions(decl->m_dimensions.size());
             for (int i = 0; i < dimensions.size(); i++) {
                 spRuntimeValue dim = context.evaluate_expression(*decl->m_dimensions[i]);
-                if (dim->m_type != RuntimeType::INT) throw "Array dimension must be an integer";
+                if (dim->m_type != RuntimeType::INT) throw "Array dimension must be an integer, not " + dim->to_string();
                 int32_t dim_val = dynamic_cast<IntegerRuntimeValue&>(*dim).m_value;
-                if (dim_val < 0) throw "Negative array size";
-                if (dim_val >= numeric_limits<int>::max()) throw "Array size too large";
+                if (dim_val < 0) throw "Negative array size " + dim->to_string();
+                if (dim_val >= numeric_limits<int>::max()) throw "Array size too large " + dim->to_string();
                 dimensions[i] = dim_val;
             }
 
@@ -183,7 +183,7 @@ spRuntimeValue LiteralExpression::evaluate(InterpreterContext &context) {
 spRuntimeValue VarReferenceExpression::evaluate(InterpreterContext &context) {
     spRuntimeValue &var_handle = context.resolve_variable(m_name);
     if (var_handle == nullptr)
-        throw "Reference to undefined variable";
+        throw "Reference to undefined variable " + m_name;
     return var_handle;
 }
 
@@ -200,18 +200,18 @@ spRuntimeValue UnaryOperatorExpression::evaluate(InterpreterContext &context) {
 spRuntimeValue FieldAccessExpression::evaluate(InterpreterContext &context) {
     spRuntimeValue owner = context.evaluate_expression(*m_struct);
     if (owner->m_type != RuntimeType::STRUCT)
-        throw "Cannot get field from non-struct type";
+        throw "Cannot get field from non-struct " + owner->to_string();
     auto fields = dynamic_cast<StructRuntimeValue&>(*owner).m_values;
     auto itr = fields->find(m_field);
     if (itr == fields->end())
-        throw "Cannot find field in struct";
+        throw "Cannot find field " + m_field + " in struct " + owner->to_string();
     return itr->second;
 }
 
 spRuntimeValue PreIncrementExpression::evaluate(InterpreterContext &context) {
     spRuntimeValue &var_handle = context.resolve_variable(m_var);
     if (var_handle == nullptr)
-        throw "Reference to undefined variable";
+        throw "Reference to undefined variable " + m_var;
     IntegerRuntimeValue delta(m_delta);
     var_handle = *var_handle + delta;
     return var_handle;
@@ -220,7 +220,7 @@ spRuntimeValue PreIncrementExpression::evaluate(InterpreterContext &context) {
 spRuntimeValue PostIncrementExpression::evaluate(InterpreterContext &context) {
     spRuntimeValue &var_handle = context.resolve_variable(m_var);
     if (var_handle == nullptr)
-        throw "Reference to undefined variable";
+        throw "Reference to undefined variable" + m_var;
     IntegerRuntimeValue delta(m_delta);
     spRuntimeValue temp = *var_handle + delta;
     spRuntimeValue ret = var_handle->copy();
