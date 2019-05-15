@@ -42,25 +42,25 @@ BASIC_OP(>=)
 struct operator_##op_name_ {}; \
 template<typename T> \
 struct operator_##op_name_<T, false> { \
-    inline spRuntimeValue operator()(T value, RuntimeValue &right) { \
-        throw "Undefined operator " #op_ " for operands (" + to_string() + ", " + right.to_string() + ")"; \
+    inline spRuntimeValue operator()(T value, RuntimeValue &left, RuntimeValue &right) { \
+        throw "Undefined operator " #op_ " for operands (" + left.to_string() + ", " + right.to_string() + ")"; \
     } \
 }; \
 template<typename T> \
 struct operator_##op_name_<T, true> { \
-    inline spRuntimeValue operator()(T value, RuntimeValue &right) { \
+    inline spRuntimeValue operator()(T value, RuntimeValue &left, RuntimeValue &right) { \
         switch (right.m_type) { \
             OP_WITH(int32_t, op_) \
             OP_WITH(int64_t, op_) \
             OP_WITH(bool, op_) \
             default: \
-                throw "Undefined operator " #op_ " for operands " + to_string() + ", " + right.to_string() + ")"; \
+                throw "Undefined operator " #op_ " for operands " + left.to_string() + ", " + right.to_string() + ")"; \
         } \
     } \
 }; \
 template<typename T, RuntimeType TYPE> \
 spRuntimeValue BasicRuntimeValue<T, TYPE>::operator op_(RuntimeValue &right) { \
-    return operator_##op_name_<T>()(m_value, right); \
+    return operator_##op_name_<T>()(m_value, *this, right); \
 }
 INT_OP(%, mod)
 INT_OP(&, and)
@@ -91,20 +91,20 @@ template<typename T, bool = std::is_integral<T>::value>
 struct operator_bitnot {};
 template<typename T>
 struct operator_bitnot<T, false> {
-    inline spRuntimeValue operator()(T value) {
-        throw "Undefined operator ~ for operand " + to_string();
+    inline spRuntimeValue operator()(T value, RuntimeValue &operand) {
+        throw "Undefined operator ~ for operand " + operand.to_string();
     }
 };
 template<typename T>
 struct operator_bitnot<T, true> {
-    inline spRuntimeValue operator()(T value) {
+    inline spRuntimeValue operator()(T value, RuntimeValue &operand) {
         typedef typename BasicRuntimeType<decltype(~value)>::type result_type;
         return std::make_unique<result_type>(~value);
     }
 };
 template<typename T, RuntimeType TYPE>
 spRuntimeValue BasicRuntimeValue<T, TYPE>::operator~() {
-    return operator_bitnot<T>()(m_value);
+    return operator_bitnot<T>()(m_value, *this);
 }
 
 template<typename T>
